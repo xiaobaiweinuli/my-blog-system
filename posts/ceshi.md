@@ -1,5 +1,5 @@
 ---
-title: 文章测试
+title: 没有slug
 description: 测试
 tags:
   - 测试
