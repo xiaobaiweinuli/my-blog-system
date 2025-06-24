@@ -1,22 +1,34 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import NextAuthSessionProvider from "@/components/NextAuthSessionProvider";
+import ResponsiveLayout from "@/components/layout/ResponsiveLayout";
+import { geist } from "./fonts";
+import ClientLayout from './ClientLayout';
+import Footer from '@/components/layout/Footer';
+import { promises as fs } from 'fs';
+import path from 'path';
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
-export const metadata: Metadata = {
-  title: "Manus Blog System",
-  description: "A powerful blog system powered by Next.js and GitHub Pages.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  try {
+    const settingsPath = path.join(process.cwd(), 'data/settings.json');
+    const data = await fs.readFile(settingsPath, 'utf-8');
+    const settings = JSON.parse(data);
+    return {
+      title: settings.siteTitle || 'Manus Blog System',
+      description: settings.siteDescription || 'A powerful blog system powered by Next.js and GitHub Pages.',
+      keywords: settings.keywords || '',
+      openGraph: {
+        images: settings.ogImage ? [{ url: settings.ogImage }] : undefined,
+      },
+      icons: settings.favicon ? { icon: settings.favicon } : undefined,
+    };
+  } catch {
+    return {
+      title: "Manus Blog System",
+      description: "A powerful blog system powered by Next.js and GitHub Pages.",
+    };
+  }
+}
 
 export default function RootLayout({
   children,
@@ -26,9 +38,16 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geist.className} antialiased min-h-screen`}
       >
-        <NextAuthSessionProvider>{children}</NextAuthSessionProvider>
+        <NextAuthSessionProvider>
+          <ResponsiveLayout fluid={true} noPadding={true}>
+            <ClientLayout>
+              {children}
+              <Footer />
+            </ClientLayout>
+          </ResponsiveLayout>
+        </NextAuthSessionProvider>
       </body>
     </html>
   );

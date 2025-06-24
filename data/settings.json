@@ -1,0 +1,15 @@
+{
+  "siteTitle": "星霜笔记",
+  "siteDescription": "星霜",
+  "footerText": "© 2023 我的博客. 保留所有权利.",
+  "socialLinks": {
+    "twitter": "",
+    "github": "xiaobaiweinuli",
+    "linkedin": ""
+  },
+  "avatarUrl": "/uploads/avatar_1750788409385.png",
+  "keywords": "Next.js,博客,笔记,技术,教程",
+  "ogImage": "",
+  "favicon": " https://avatars.githubusercontent.com/u/94781176?v=4",
+  "robots": ""
+}
