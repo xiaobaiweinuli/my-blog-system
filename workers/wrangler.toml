@@ -1,0 +1,50 @@
+name = "cs"
+main = "src/index.ts"
+workers_dev = true
+compatibility_date = "2025-07-12"
+
+[[routes]]
+pattern = "louns.org/*"
+zone_name = "lopdns.org"
+[[routes]]
+pattern = "*.louss.org/*"
+zone_name = "lopdns.org"
+
+[vars]
+ADMIN_EMAILS = "163162@q.com"
+FRONTEND_URL = "http://localhost:3000,http://127.0.0.1:3000,https://lousns.org"
+GITHUB_CLIENT_ID = "Ov23lijHBHSm2e"
+GITHUB_CLIENT_SECRET = "25e4b00faa3d623f0d22675561aa39c"
+JWT_SECRET = "b2e7f8c1-4a3d-4e2a-9c8e-7f6123$%^ZXCVbnm"
+SITE_URL = "https://lons.org"
+GITHUB_TOKEN = "githWTD56A0CUEo2nbVV7jHbwNPzopjrlSLI2CRIO7FQRA9YpcMDTN"
+GISCUS_REPO = "xiaobaiweinuli/my-blog-system"
+ENABLE_REQUEST_LOG = "true"
+RESEND_API_KEY = "re_95dqMSQYmnoSXDfZG"
+RESEND_FROM = "xingsh.org"
+HCAPTCHA_SECRET ="ES_7a6a57b1bfa5b"
+# ROOT_DOMAIN= "loushi.s.org"
+# WWW_DOMAIN = "www.dns.org"
+
+
+[observability.logs]
+enabled = true
+
+[triggers]
+crons = ["*/5 * * * *"]  # 每5分钟自动触发一次
+
+[ai]
+binding = "AI"
+
+[[kv_namespaces]]
+id = "191a5fb25c6b4c21a1d8eaab390eba22"
+binding = "CACHE"
+
+[[d1_databases]]
+binding = "DB"
+database_id = "efb24893-cc25-4c04-b352-e9be4006e798"
+database_name = "modern-blog-db"
+
+[[r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "wenjian"

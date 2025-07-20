@@ -51,6 +51,8 @@ function Button({
     <Comp
       data-slot="button"
       className={cn(buttonVariants({ variant, size, className }))}
+      // 确保按钮有适当的类型
+      type={!asChild && !props.type ? "button" : props.type}
       {...props}
     />
   )

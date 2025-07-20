@@ -1,105 +1,125 @@
-// Application-specific types that don't depend on NextAuth
-// NextAuth types are defined in next-auth.d.ts
+// 用户类型定义
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  avatar?: string;
+  image?: string; // 兼容next-auth的image字段
+  role: 'admin' | 'collaborator' | 'user';
+  createdAt: Date;
+  updatedAt: Date;
+}
 
-// Blog post related types
-export interface PostMetadata {
-  slug: string;
+// 文章类型定义
+export interface Article {
+  id: string;
   title: string;
-  description: string;
-  coverImageUrl: string;
-  tags: string[];
-  language: string;
-  date: string;
-  status?: 'draft' | 'published' | 'archived';
-  isSticky?: boolean;
-  [key: string]: any;
-}
-
-export interface Post extends PostMetadata {
+  slug: string;
   content: string;
-  updatedAt?: string;
-  path?: string;
+  excerpt?: string;
+  summary?: string; // AI 生成的摘要
+  coverImage?: string;
+  tags: string[];
+  category: string;
+  status: 'draft' | 'published' | 'archived' | 'scheduled' | 'auto-saved' | 'manual-saved';
+  authorId: string;
+  author: User;
+  publishedAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+  viewCount: number;
+  likeCount: number;
 }
 
-// API response types
+// 文件类型定义
+export interface FileItem {
+  id: string;
+  name: string;
+  path: string;
+  url: string;
+  size: number;
+  type: string;
+  uploadedBy: string;
+  uploadedAt: Date;
+  isPublic: boolean;
+}
+
+// 评论类型定义
+export interface Comment {
+  id: string;
+  content: string;
+  authorName: string;
+  authorEmail: string;
+  authorAvatar?: string;
+  articleId?: string;
+  parentId?: string;
+  replies?: Comment[];
+  createdAt: Date;
+  status: 'pending' | 'approved' | 'rejected';
+}
+
+// 分类类型定义
+export interface Category {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string;
+  color?: string;
+  articleCount: number;
+}
+
+// 标签类型定义
+export interface Tag {
+  id: string;
+  name: string;
+  slug: string;
+  color?: string;
+  articleCount: number;
+}
+
+// API 响应类型
 export interface ApiResponse<T = any> {
   success: boolean;
   data?: T;
+  message?: string;
   error?: string;
-  code?: string | number;
-  meta?: {
-    total?: number;
-    page?: number;
-    limit?: number;
-    totalPages?: number;
-  };
-  [key: string]: any; // Allow additional properties
 }
 
-// Extended error response type
-export interface ApiErrorResponse extends Omit<ApiResponse, 'data'> {
-  error: string;
-  code: string | number;
-  details?: Record<string, unknown>;
-}
-
-// Error handling
-export class AppError extends Error {
-  statusCode: number;
-  isOperational: boolean;
-  
-  constructor(message: string, statusCode: number) {
-    super(message);
-    this.statusCode = statusCode;
-    this.isOperational = true;
-    
-    Error.captureStackTrace(this, this.constructor);
-  }
-}
-
-// File related types
-export interface FileInfo {
-  name: string;
-  path: string;
-  download_url: string;
-  sha: string;
-  size: number;
-  type: string;
-  url: string;
-  html_url: string;
-}
-
-// Pagination
-export interface PaginationParams {
-  page?: number;
-  limit?: number;
-  search?: string;
-  status?: string;
-  tag?: string;
-}
-
-export interface PaginatedResponse<T> {
-  items: T[];
-  total: number;
+// 分页类型
+export interface Pagination {
   page: number;
   limit: number;
+  total: number;
   totalPages: number;
 }
 
-// Form related types
-export interface FormField<T = any> {
-  value: T;
-  error?: string;
-  required?: boolean;
-  validate?: (value: T) => string | undefined;
+// 搜索结果类型
+export interface SearchResult {
+  articles: Article[];
+  pagination: Pagination;
 }
 
-export interface FormState {
-  [key: string]: FormField<any>;
+// 主题类型
+export type Theme = 'light' | 'dark' | 'system';
+
+// 导航项类型
+export interface NavItem {
+  title: string;
+  href: string;
+  icon?: string;
+  children?: NavItem[];
 }
 
-// Export the UserRole type for use in the application
-export type { UserRole } from './next-auth';
-
-// Re-export NextAuth types for convenience
-export type { User, Session } from 'next-auth';
+// 友情链接类型定义
+export interface FriendLink {
+  id: string;
+  name: string;
+  url: string;
+  description: string;
+  avatar?: string;
+  category: string;
+  status: 'active' | 'inactive' | 'pending';
+  createdAt: Date;
+  updatedAt: Date;
+  order: number;
+}

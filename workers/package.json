@@ -1,0 +1,18 @@
+{
+	"name": "cs",
+	"version": "0.0.0",
+	"private": true,
+	"scripts": {
+		"deploy": "wrangler deploy",
+		"dev": "wrangler dev",
+		"start": "wrangler dev"
+	},
+	"devDependencies": {
+		"wrangler": "^4.24.3"
+	},
+	"dependencies": {
+		"bad-words": "^4.0.0",
+		"uuid": "^11.1.0",
+		"xss": "^1.0.15"
+	}
+}
