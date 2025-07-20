@@ -9,6 +9,8 @@ const octokit = new Octokit({
 const owner = process.env.GITHUB_BLOG_REPO_OWNER || '';
 const repo = process.env.GITHUB_BLOG_REPO_NAME || '';
 
+// 本文件所有函数只能在服务端（API 路由、server component）调用，不能在客户端组件中直接调用，否则会因无法读取服务端环境变量而报错。
+
 export interface PostMetadata {
   slug: string;
   title: string;
@@ -126,9 +128,9 @@ export async function getPublicPosts(options: { page?: number; limit?: number } 
       return null;
     });
 
-    const allPosts = (await Promise.all(allPostsPromises))
-      .filter((post): post is PostMetadata => post !== null)
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const allPostsRaw = await Promise.all(allPostsPromises);
+    const allPosts: PostMetadata[] = allPostsRaw.filter((post): post is PostMetadata => !!post && typeof post === 'object' && 'slug' in post && 'title' in post && 'status' in post && 'visibility' in post);
+    allPosts.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     const total = allPosts.length;
 
@@ -250,4 +252,58 @@ export async function getPostWithAccessCheck(slug: string, session: Session | nu
     ext,
     ...frontmatter,
   };
+}
+
+export async function getAllPosts(options: { page?: number; limit?: number } = {}): Promise<{ posts: PostMetadata[]; total: number }> {
+  if (!owner || !repo) {
+    throw new Error('GitHub repository owner or name is not configured in environment variables.');
+  }
+
+  try {
+    const { data: files } = await octokit.repos.getContent({
+      owner,
+      repo,
+      path: 'posts',
+      cache: 'no-store',
+    });
+
+    if (!Array.isArray(files)) {
+      return { posts: [], total: 0 };
+    }
+
+    const mdFiles = files.filter(file => (file.path.endsWith('.md') || file.path.endsWith('.mdx')) && file.type === 'file');
+
+    const allPostsPromises = mdFiles.map(async (file) => {
+      const fileContent = await getFileContent(file.path);
+      if (!fileContent) return null;
+      const { data: frontmatter } = matter(fileContent);
+      return {
+        slug: file.name.replace(/\.(md|mdx)$/, ''),
+        title: frontmatter.title || 'No Title',
+        description: frontmatter.description || '',
+        coverImageUrl: frontmatter.coverImageUrl || '',
+        tags: frontmatter.tags ? (Array.isArray(frontmatter.tags) ? frontmatter.tags : frontmatter.tags.split(',').map((t: string) => t.trim())) : [],
+        language: frontmatter.language || 'zh',
+        date: frontmatter.date ? new Date(frontmatter.date).toISOString() : new Date().toISOString(),
+        status: frontmatter.status,
+        visibility: frontmatter.visibility,
+        ...frontmatter,
+      };
+    });
+
+    const allPostsRaw = await Promise.all(allPostsPromises);
+    const allPosts: PostMetadata[] = allPostsRaw.filter((post): post is PostMetadata => !!post && typeof post === 'object' && 'slug' in post && 'title' in post && 'status' in post && 'visibility' in post);
+    allPosts.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    const total = allPosts.length;
+    const { page = 1, limit = 10 } = options;
+    const startIndex = (page - 1) * limit;
+    const endIndex = page * limit;
+    const paginatedPosts = allPosts.slice(startIndex, endIndex);
+
+    return { posts: paginatedPosts, total };
+  } catch (error) {
+    console.error('Failed to fetch all posts from GitHub:', error);
+    return { posts: [], total: 0 };
+  }
 }

@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
-import { getPublicPosts } from '@/lib/posts';
+import { getPublicPosts, getAllPosts } from '@/lib/posts';
 import { withErrorHandler } from '@/lib/error';
 import { paginationQuerySchema, validateQuery } from '@/lib/validators';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 
 // Type definitions for the API response
 type PostListResponse = {
@@ -27,12 +29,16 @@ async function GET(request: Request) {
   // Validate query parameters
   const { page, limit, ...filters } = validateQuery(paginationQuerySchema, query);
   
-  // Fetch posts with pagination and filters
-  const { posts, total } = await getPublicPosts({ 
-    page, 
-    limit, 
-    ...filters 
-  });
+  // 获取当前用户 session
+  const session = await getServerSession(authOptions);
+  let posts, total;
+  if (session?.user?.role === 'admin' || session?.user?.role === 'collaborator') {
+    // 管理员/协作者返回所有文章
+    ({ posts, total } = await getAllPosts({ page, limit, ...filters }));
+  } else {
+    // 普通用户只返回已发布+公开
+    ({ posts, total } = await getPublicPosts({ page, limit, ...filters }));
+  }
   
   // Calculate pagination metadata
   const totalPages = Math.ceil(total / limit);

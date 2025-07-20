@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useContext } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useSession } from 'next-auth/react';
+// 修正路径，假设 AdminSessionContext 实际路径为 '@/app/admin/layout'
+import { AdminSessionContext } from '@/app/admin/layout';
 import { toast } from 'sonner';
 import type { PostFormData } from '@/components/admin/PostForm';
-import { Post } from '@/types/post';
+import type { Post } from '@/types/post';
 import nextDynamic from 'next/dynamic';
 import matter from 'gray-matter';
 
@@ -36,7 +37,7 @@ export default function EditPostPage() {
   const params = useParams();
   const slug = params.slug as string;
   const router = useRouter();
-  const { data: session, status } = useSession();
+  const { session, status }: { session: any, status: string } = useContext(AdminSessionContext);
 
   const [post, setPost] = useState<PostFormData | null>(null);
   const [originalTitle, setOriginalTitle] = useState<string>('');
@@ -46,6 +47,7 @@ export default function EditPostPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
     const fetchData = async () => {
       if (status === 'unauthenticated') {
         toast.error('请先登录');
@@ -177,7 +179,6 @@ export default function EditPostPage() {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${session?.github_access_token}`,
         },
         body: JSON.stringify({
           ...formData,

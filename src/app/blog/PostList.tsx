@@ -24,6 +24,11 @@ export default function PostList({ initialPosts, initialTotal, isAdmin = false }
   const limit = 10;
   const router = useRouter();
 
+  useEffect(() => {
+    setPosts(initialPosts);
+    setTotal(initialTotal);
+  }, [initialPosts, initialTotal]);
+
   const fetchPosts = async (newPage: number) => {
     setIsLoading(true);
     try {
@@ -32,8 +37,8 @@ export default function PostList({ initialPosts, initialTotal, isAdmin = false }
         throw new Error('Failed to fetch posts');
       }
       const data = await response.json();
-      setPosts(data.posts);
-      setTotal(data.total);
+      setPosts(data.data);
+      setTotal(data.meta?.total || 0);
       setPage(newPage);
     } catch (error) {
       console.error(error);

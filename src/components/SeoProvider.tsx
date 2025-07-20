@@ -1,29 +1,18 @@
 'use client';
 import { DefaultSeo } from 'next-seo';
 import { useEffect, useState } from 'react';
+import { useSettings } from '@/components/layout/SettingsProvider';
 
 export default function SeoProvider() {
-  const [seo, setSeo] = useState({
-    title: 'Manus Blog System',
-    description: 'A powerful blog system powered by Next.js and GitHub Pages.',
-    ogImage: '/og-default.jpg',
-    keywords: '',
-    favicon: '',
-    robots: '',
-  });
-
-  useEffect(() => {
-    fetch('/api/settings')
-      .then(res => res.json())
-      .then(data => setSeo({
-        title: data.siteTitle || 'Manus Blog System',
-        description: data.siteDescription || '',
-        ogImage: data.ogImage || '/og-default.jpg',
-        keywords: data.keywords || '',
-        favicon: data.favicon || '',
-        robots: data.robots || '',
-      }));
-  }, []);
+  const settings = useSettings();
+  const seo = {
+    title: settings.siteTitle || 'Manus Blog System',
+    description: settings.siteDescription || '',
+    ogImage: settings.ogImage || '/og-default.jpg',
+    keywords: settings.keywords || '',
+    favicon: settings.favicon || '',
+    robots: settings.robots || '',
+  };
 
   useEffect(() => {
     if (seo.favicon) {

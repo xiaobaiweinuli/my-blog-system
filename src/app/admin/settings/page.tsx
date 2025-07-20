@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,8 +9,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { AdminSessionContext } from '../layout';
 
 interface Settings {
   siteTitle: string;
@@ -31,7 +31,7 @@ interface Settings {
 }
 
 export default function AdminSettingsPage() {
-  const { data: session, status } = useSession();
+  const { session, status } = useContext(AdminSessionContext);
   const router = useRouter();
 
   useEffect(() => {
@@ -63,9 +63,19 @@ export default function AdminSettingsPage() {
 
   // 页面加载时获取设置
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    // 优先读取 sessionStorage 缓存
+    const cached = sessionStorage.getItem('siteSettings');
+    if (cached) {
+      setSettings(JSON.parse(cached));
+    }
+    // 请求最新数据并更新缓存
     fetch('/api/settings')
       .then(res => res.json())
-      .then(data => setSettings(data))
+      .then(data => {
+        setSettings(data);
+        sessionStorage.setItem('siteSettings', JSON.stringify(data));
+      })
       .catch(() => {});
   }, []);
 

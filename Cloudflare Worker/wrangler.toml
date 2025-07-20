@@ -1,0 +1,26 @@
+name = "my-blog"
+main = "src/worker.js"
+workers_dev = true
+compatibility_date = "2025-06-15"
+
+[observability]
+enabled = true
+
+[vars]
+ACCOUNT_ID = "0013573eaa6ea468b94378e565e59"
+ALLOWED_ORIGINS = "https://my-blo.workers.dev/,http://localost:3000/"
+FRONTEND_URL = "https://my-blog.bxiaokers.dev"
+GITHUB_CLIENT_ID = "Ov23lidzwqVWSy"
+GITHUB_CLIENT_SECRET = "47f012916f5647a979e235d6b7d8b28"
+R2_ACCOUNT_ID = "a206f24e006188f7c75b"
+R2_BUCKET_NAME = "my-blog"
+R2_SECRET_ACCESS_KEY = "1681d7a47713dbf9e0b23b3868ceb444ee6a6486b15e041e2610"
+SESSION_SECRET = "aB3@k8p9!m7zQ2l9zX4c6v8b7n9m0p2q"
+
+[[kv_namespaces]]
+id = "bb09f96b7464b9"
+binding = "GITUB_KV"
+
+[[r2_buckets]]
+binding = "R2_BUKET"
+bucket_name = "my-bog"

@@ -1,16 +1,9 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useSettings } from '@/components/layout/SettingsProvider';
 import Image from 'next/image';
 
 export default function Footer() {
-  const [site, setSite] = useState({
-    footerText: '',
-    avatarUrl: '',
-    socialLinks: { twitter: '', github: '', linkedin: '' },
-  });
-  useEffect(() => {
-    fetch('/api/settings').then(res => res.json()).then(data => setSite(data));
-  }, []);
+  const site = useSettings();
   return (
     <footer className="w-full py-8 text-gray-400 text-sm text-center border-t bg-white/80 dark:bg-gray-900/80 mt-12">
       <div className="flex flex-col items-center gap-2">

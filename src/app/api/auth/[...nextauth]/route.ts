@@ -56,7 +56,7 @@ export const authOptions: AuthOptions = {
       if (token.user) {
         session.user = token.user as any;
       }
-      // 不注入 worker_session_token
+      // 不注入 github_access_token 到 session，保证前端不可见
       return session;
     },
   },

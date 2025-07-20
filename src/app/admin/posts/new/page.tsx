@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useContext } from 'react';
 import { useRouter } from 'next/navigation';
-import { useSession } from 'next-auth/react';
-import type { PostFormData } from '@/components/admin/PostForm';
 import { toast } from 'sonner';
 
 import dynamic from 'next/dynamic';
+import { AdminSessionContext } from '@/app/admin/layout';
+import type { PostFormData } from '@/components/admin/PostForm';
 
 const PostForm = dynamic(() => import('@/components/admin/PostForm'), {
   ssr: false,
@@ -20,19 +20,14 @@ interface PostInfo {
 
 export default function NewPostPage() {
   const router = useRouter();
-  const { data: session, status } = useSession({
-    required: true,
-    onUnauthenticated() {
-      toast.error('请先登录');
-      router.push('/api/auth/signin');
-    },
-  });
+  const { session, status }: { session: any, status: string } = useContext(AdminSessionContext);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [allPosts, setAllPosts] = useState<PostInfo[]>([]);
   const [titleError, setTitleError] = useState<string | null>(null);
   const [slugError, setSlugError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
     const fetchAllPosts = async () => {
       try {
         const cachedPostsRaw = sessionStorage.getItem('cachedPosts');
@@ -131,7 +126,7 @@ export default function NewPostPage() {
         content: formData.content,
         tags:
           typeof formData.tags === 'string'
-            ? formData.tags.split(',').map(t => t.trim()).filter(Boolean)
+            ? formData.tags.split(',').map((t: string) => t.trim()).filter(Boolean)
             : Array.isArray(formData.tags)
               ? formData.tags
               : [],
@@ -141,7 +136,6 @@ export default function NewPostPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.github_access_token}`,
         },
         body: JSON.stringify(postData),
       });

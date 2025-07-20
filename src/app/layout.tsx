@@ -7,6 +7,7 @@ import ClientLayout from './ClientLayout';
 import Footer from '@/components/layout/Footer';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { SettingsProvider } from '@/components/layout/SettingsProvider';
 
 export async function generateMetadata(): Promise<Metadata> {
   try {
@@ -40,14 +41,16 @@ export default function RootLayout({
       <body
         className={`${geist.className} antialiased min-h-screen`}
       >
-        <NextAuthSessionProvider>
-          <ResponsiveLayout fluid={true} noPadding={true}>
-            <ClientLayout>
-              {children}
-              <Footer />
-            </ClientLayout>
-          </ResponsiveLayout>
-        </NextAuthSessionProvider>
+        <SettingsProvider>
+          <NextAuthSessionProvider>
+            <ResponsiveLayout fluid={true} noPadding={true}>
+              <ClientLayout>
+                {children}
+                <Footer />
+              </ClientLayout>
+            </ResponsiveLayout>
+          </NextAuthSessionProvider>
+        </SettingsProvider>
       </body>
     </html>
   );

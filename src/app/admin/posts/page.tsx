@@ -1,7 +1,8 @@
 "use client";
 
 import Link from 'next/link';
-import { useSession, signIn } from 'next-auth/react';
+import { useContext } from 'react';
+import { AdminSessionContext } from '../layout';
 import { useEffect, useState, useCallback } from 'react';
 import matter from 'gray-matter';
 import {
@@ -87,12 +88,7 @@ interface ApiFile {
 }
 
 export default function AdminPostsPage() {
-  const { data: session, status } = useSession({
-    required: true,
-    onUnauthenticated() {
-      signIn('github');
-    },
-  });
+  const { session, status } = useContext(AdminSessionContext);
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -128,17 +124,17 @@ export default function AdminPostsPage() {
     setError(null);
 
     try {
-      const token = session.github_access_token;
-      if (!token) throw new Error('未在会话中找到 GitHub 访问令牌。');
+      // const token = session.github_access_token;
+      // if (!token) throw new Error('未在会话中找到 GitHub 访问令牌。');
 
       const response = await fetch(`/api/admin/posts/${postId}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` },
+        // 不再传 headers: { Authorization }
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || '删除文章失败');
+        throw new Error(errorData.message || errorData.error || '删除文章失败');
       }
 
       // On success, update cache
@@ -182,7 +178,6 @@ export default function AdminPostsPage() {
       const fetchedPosts: Post[] = response.data.data;
 
       if (!fetchedPosts || fetchedPosts.length === 0) {
-        setError("API 未返回任何文章。请检查您的 GitHub 仓库中的 'posts' 目录是否包含有效的 .md 文件，或检查您的 GitHub 令牌是否具有正确的权限。");
         setPosts([]);
         setFilteredPosts([]);
       } else {
@@ -202,6 +197,7 @@ export default function AdminPostsPage() {
   }, [session]);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
     if (session && !initialFetchDone) {
       handleRefresh();
       setInitialFetchDone(true);

@@ -3,18 +3,11 @@ import { useSession, signIn, signOut } from 'next-auth/react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { useSettings } from '@/components/layout/SettingsProvider';
 
 export default function Home() {
   const { data: session, status } = useSession();
-  const [site, setSite] = useState({
-    siteTitle: '',
-    siteDescription: '',
-    avatarUrl: '',
-    footerText: '',
-  });
-  useEffect(() => {
-    fetch('/api/settings').then(res => res.json()).then(data => setSite(data));
-  }, []);
+  const site = useSettings();
 
   const handleWorkerSignIn = () => {
     // The GitHub App's client ID

@@ -13,6 +13,7 @@ import { z } from 'zod';
 import { postInputSchema } from '@/lib/validators/admin';
 import { NextResponse } from 'next/server';
 import { Octokit } from '@octokit/rest';
+import { getToken } from 'next-auth/jwt';
 
 type PostFrontmatter = {
   title: string;
@@ -69,10 +70,10 @@ async function GET(req: NextRequest, { params }: { params: { slug: string } }) {
   const { slug } = params;
   
   // Authenticate and authorize
-  const session = await getServerSession(authOptions);
-  validateUserSession(session);
+  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+  validateUserSession(token);
   
-  const octokit = new Octokit({ auth: session.github_access_token });
+  const octokit = new Octokit({ auth: token.github_access_token });
   const { owner, repo } = validateGitHubConfig();
 
   try {
@@ -137,8 +138,8 @@ async function PUT(req: NextRequest, { params }: { params: { slug: string } }) {
   const { slug } = params;
   
   // Authenticate and authorize
-  const session = await getServerSession(authOptions);
-  if (!session) {
+  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+  if (!token) {
     throw createError('AUTHENTICATION_REQUIRED', 'Authentication required');
   }
 
@@ -150,7 +151,7 @@ async function PUT(req: NextRequest, { params }: { params: { slug: string } }) {
     rawData = Object.fromEntries(formData.entries());
   }
 
-  const octokit = new Octokit({ auth: session.github_access_token });
+  const octokit = new Octokit({ auth: token.github_access_token });
   const { owner, repo } = validateGitHubConfig();
 
   try {
@@ -273,49 +274,61 @@ async function PUT(req: NextRequest, { params }: { params: { slug: string } }) {
  */
 async function DELETE(req: NextRequest, { params }: { params: { slug: string } }) {
   const { slug } = params;
-  
   // Authenticate and authorize
-  const session = await getServerSession(authOptions);
-  validateUserSession(session);
-  
-  const octokit = new Octokit({ auth: session.github_access_token });
+  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+  validateUserSession(token);
+  const octokit = new Octokit({ auth: token.github_access_token });
   const { owner, repo } = validateGitHubConfig();
-  const filePath = `posts/${slug}.md`;
 
-  try {
-    // First, get the file's SHA
-    const { data: fileContent } = await octokit.repos.getContent({
-      owner,
-      repo,
-      path: filePath,
-    });
+  // 支持 .md 和 .mdx 文件删除
+  const filePaths = [`posts/${slug}.md`, `posts/${slug}.mdx`];
+  let deleted = false;
+  let lastError = null;
 
-    if (Array.isArray(fileContent) || !('sha' in fileContent)) {
-      throw createError('NOT_FOUND', `Post '${slug}' not found`);
+  for (const filePath of filePaths) {
+    try {
+      console.log('尝试删除文件:', { owner, repo, filePath });
+      // 获取文件 SHA
+      const { data: fileContent } = await octokit.repos.getContent({
+        owner,
+        repo,
+        path: filePath,
+      });
+      if (Array.isArray(fileContent) || !('sha' in fileContent)) {
+        console.log('未找到文件或文件内容异常:', { filePath, fileContent });
+        continue;
+      }
+      // 删除文件
+      await octokit.repos.deleteFile({
+        owner,
+        repo,
+        path: filePath,
+        message: `feat: Delete blog post - ${slug}`,
+        sha: fileContent.sha,
+      });
+      console.log('文件删除成功:', { filePath });
+      deleted = true;
+    } catch (error: any) {
+      console.error('删除文件出错:', { filePath, error });
+      // 只在 404 时跳过，其他错误抛出
+      if (error.status === 404) {
+        lastError = error;
+        continue;
+      } else {
+        // 其它错误直接抛出
+        throw createError('DELETE_FAILED', error.message || '删除文章失败');
+      }
     }
-
-    // Delete the file
-    await octokit.repos.deleteFile({
-      owner,
-      repo,
-      path: filePath,
-      message: `feat: Delete blog post - ${slug}`,
-      sha: fileContent.sha,
-    });
-
-    const response: DeletePostResponse = {
-      message: `Post '${slug}' deleted successfully`
-    };
-    return response;
-  } catch (error) {
-    // Re-throw if it's already an AppError
-    if ('code' in (error as any) && (error as any).code) {
-      throw error;
-    }
-    
-    handleGitHubError(error, `delete post '${slug}'`);
-    throw error; // Re-throw after handling
   }
+
+  if (!deleted) {
+    throw createError('NOT_FOUND', `Post '${slug}' not found (.md/.mdx)`);
+  }
+
+  const response: DeletePostResponse = {
+    message: `Post '${slug}' deleted successfully (.md/.mdx)`
+  };
+  return response;
 }
 
 // Wrap handlers with error handling middleware

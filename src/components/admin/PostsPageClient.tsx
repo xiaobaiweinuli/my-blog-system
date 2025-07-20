@@ -2,7 +2,6 @@
 "use client";
 
 import Link from 'next/link';
-import { useSession } from 'next-auth/react';
 import { useState, useMemo } from 'react';
 import {
   Table,
@@ -73,7 +72,6 @@ function formatDate(dateString: string): string {
 }
 
 export default function AdminPostsPageClient({ initialPosts }: { initialPosts: Post[] }) {
-  const { data: session } = useSession();
   const [posts, setPosts] = useState<Post[]>(initialPosts);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -101,17 +99,15 @@ export default function AdminPostsPageClient({ initialPosts }: { initialPosts: P
   };
 
   const executeDelete = async () => {
-    if (!postToDelete || !session) return;
+    if (!postToDelete) return;
     setDeletingId(postToDelete.id);
     setShowDeleteConfirm(false);
 
     const toastId = toast.loading(`正在删除文章: ${postToDelete.title}...`);
 
     try {
-      const token = session.github_access_token;
       const response = await fetch(`/api/admin/posts/${postToDelete.id}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` },
       });
 
       if (!response.ok) {

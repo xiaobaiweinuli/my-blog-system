@@ -6,40 +6,26 @@ var __name = (target, value) => __defProp(target, "name", { value, configurable:
 
 // src/utils.js
 function handleCORS(request, env) {
-  console.log("CORS 环境变量:", env ? env.ALLOWED_ORIGINS : "env 未定义");
-  
-  if (!env || !env.ALLOWED_ORIGINS) {
-    console.error("env 或者 ALLOWED_ORIGINS 未定义");
-    return {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS, HEAD",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization, x-override, x-session-token",
-      "Access-Control-Max-Age": "86400"
-    };
-  }
-  
-  const allowedOrigins = env.ALLOWED_ORIGINS
-    .split(",")
-    .map(origin => origin.trim().replace(/\/+$/, ""));
-  
-  const requestOrigin = request.headers.get("origin");
-  let allowOrigin = '';
-  
-  if (requestOrigin && allowedOrigins.includes(requestOrigin.replace(/\/+$/, ""))) {
-    allowOrigin = requestOrigin;
-  } else {
-    console.warn(`请求来源 ${requestOrigin} 不在允许列表中，使用第一个允许的来源`);
-    allowOrigin = allowedOrigins[0] || '*';
-  }
-  
-  console.log(`CORS 响应头: Access-Control-Allow-Origin=${allowOrigin}`);
-  
-  return {
-    "Access-Control-Allow-Origin": allowOrigin,
-    "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS, HEAD",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, x-override, x-session-token",
-    "Access-Control-Max-Age": "86400"
+  const corsConfig = {
+    "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS, HEAD, PUT, PATCH",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, x-override, x-session-token, Cache-Control",
+    "Access-Control-Max-Age": "86400",
+    "Access-Control-Allow-Credentials": "true"
   };
+  
+  if (!env?.ALLOWED_ORIGINS) {
+    return { "Access-Control-Allow-Origin": "*", ...corsConfig };
+  }
+  
+  const allowedOrigins = env.ALLOWED_ORIGINS.split(",").map(origin => origin.trim().replace(/\/+$/, ""));
+  const requestOrigin = request.headers.get("origin");
+  
+  // 如果请求源在允许列表中，使用该源，否则使用第一个允许的源或*
+  const allowOrigin = (requestOrigin && allowedOrigins.includes(requestOrigin.replace(/\/+$/, "")))
+    ? requestOrigin 
+    : (allowedOrigins[0] || '*');
+  
+  return { "Access-Control-Allow-Origin": allowOrigin, ...corsConfig };
 }
 __name(handleCORS, "handleCORS");
 
@@ -48,13 +34,11 @@ function handleError(error, request, env) {
   return new Response(JSON.stringify({
     success: false,
     error: "Internal server error",
-    message: error.message
+    message: error.message,
+    stack: env?.DEBUG === "true" ? error.stack : undefined
   }), {
     status: 500,
-    headers: {
-      "Content-Type": "application/json",
-      ...handleCORS(request, env)
-    }
+    headers: { "Content-Type": "application/json", ...handleCORS(request, env) }
   });
 }
 __name(handleError, "handleError");
@@ -165,11 +149,13 @@ function generateUniqueFilename(originalFilename) {
 }
 
 function getBaseName(filename) {
+  if (!filename) return '';
   const lastDotIndex = filename.lastIndexOf('.');
   return lastDotIndex > 0 ? filename.substring(0, lastDotIndex) : filename;
 }
 
 function getExtension(filename) {
+  if (!filename) return '';
   const lastDotIndex = filename.lastIndexOf('.');
   return lastDotIndex > 0 ? filename.substring(lastDotIndex) : '';
 }
@@ -296,7 +282,7 @@ async function handleR2Check(request, env) {
   const authHeader = request.headers.get("Authorization");
   const sessionToken = authHeader?.replace("Bearer ", "");
   const user = sessionToken ? await verifyUserRole(sessionToken, env) : null;
-  if (!user || user.role !== "admin" && user.role !== "collaborator") {
+  if (!user || (user.role !== "admin" && user.role !== "collaborator")) {
     return new Response(JSON.stringify({ error: "Unauthorized or Insufficient Permissions" }), { status: 403, headers: corsHeaders });
   }
   const url = new URL(request.url);
@@ -306,7 +292,10 @@ async function handleR2Check(request, env) {
   }
   try {
     const { R2_BUCKET } = env;
-    const existingFile = await R2_BUCKET.head(filename);
+    if (!R2_BUCKET) {
+      throw new Error("R2_BUCKET binding is not configured or env is undefined.");
+    }
+    const existingFile = await R2_BUCKET.head(filename).catch(() => null);
     return new Response(JSON.stringify({ exists: existingFile !== null }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" }
@@ -410,37 +399,33 @@ async function handleR2View(request, env) {
 __name(handleR2View, "handleR2View");
 
 // src/auth.js - 安全认证模块
+// JWT相关工具函数
+const base64UrlEncode = str => btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const base64UrlDecode = str => atob(str.replace(/-/g, "+").replace(/_/g, "/"));
+
 async function generateSessionToken(userId, userRole, env) {
   const secret = env.SESSION_SECRET;
   if (!secret) throw new Error("SESSION_SECRET 未配置");
   
+  const now = Math.floor(Date.now() / 1000);
   const payload = {
     sub: userId,
     role: userRole,
-    iat: Math.floor(Date.now() / 1000),
-    exp: Math.floor(Date.now() / 1000) + 86400 // 24小时过期
+    iat: now,
+    exp: now + 86400 // 24小时过期
   };
   
   const encoder = new TextEncoder();
   const data = encoder.encode(JSON.stringify(payload));
   const key = await crypto.subtle.importKey(
-    "raw",
-    encoder.encode(secret),
+    "raw", encoder.encode(secret),
     { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"]
+    false, ["sign"]
   );
   
   const signature = await crypto.subtle.sign("HMAC", key, data);
-  const sigBase64 = btoa(String.fromCharCode(...new Uint8Array(signature)))
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-  
-  const payloadBase64 = btoa(JSON.stringify(payload))
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
+  const sigBase64 = base64UrlEncode(String.fromCharCode(...new Uint8Array(signature)));
+  const payloadBase64 = base64UrlEncode(JSON.stringify(payload));
   
   return `${payloadBase64}.${sigBase64}`;
 }
@@ -452,30 +437,23 @@ async function verifySessionToken(token, env) {
     const [payloadBase64, sigBase64] = token.split(".");
     if (!payloadBase64 || !sigBase64) return null;
     
-    const payload = JSON.parse(atob(payloadBase64.replace(/-/g, "+").replace(/_/g, "/")));
-    const secret = env.SESSION_SECRET;
+    const payload = JSON.parse(base64UrlDecode(payloadBase64));
+    if (!env.SESSION_SECRET) throw new Error("SESSION_SECRET 未配置");
     
     const encoder = new TextEncoder();
     const data = encoder.encode(JSON.stringify(payload));
     const key = await crypto.subtle.importKey(
-      "raw",
-      encoder.encode(secret),
+      "raw", encoder.encode(env.SESSION_SECRET),
       { name: "HMAC", hash: "SHA-256" },
-      false,
-      ["verify"]
+      false, ["verify"]
     );
     
-    const sigBuffer = Uint8Array.from(atob(sigBase64.replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0));
+    const sigBuffer = Uint8Array.from(base64UrlDecode(sigBase64), c => c.charCodeAt(0));
     const isValid = await crypto.subtle.verify("HMAC", key, sigBuffer, data);
     
-    if (!isValid || payload.exp < Math.floor(Date.now() / 1000)) {
-      return null;
-    }
+    if (!isValid || payload.exp < Math.floor(Date.now() / 1000)) return null;
     
-    return {
-      id: payload.sub,
-      role: payload.role
-    };
+    return { id: payload.sub, role: payload.role };
   } catch (error) {
     console.error("令牌验证失败:", error);
     return null;
@@ -484,9 +462,11 @@ async function verifySessionToken(token, env) {
 
 // src/github.js - GitHub OAuth 安全处理
 async function handleGitHubOAuth(request, env) {
-  console.log("--- 开始 GitHub OAuth 流程 ---");
+  const corsHeaders = handleCORS(request, env);
+  const isDebug = env?.DEBUG === "true";
   
   try {
+    // 1. 验证请求参数
     const url = new URL(request.url);
     const code = url.searchParams.get("code");
     const redirectUri = url.searchParams.get("redirect_uri") || env.FRONTEND_URL || "http://localhost:3000";
@@ -498,16 +478,19 @@ async function handleGitHubOAuth(request, env) {
         redirect: `${redirectUri}/login?error=missing_code`
       }), {
         status: 400,
-        headers: { "Content-Type": "application/json", ...handleCORS(request, env) }
+        headers: { "Content-Type": "application/json", ...corsHeaders }
       });
     }
     
+    // 2. 验证环境配置
     const { GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, GITHUB_KV } = env;
-    if (!GITHUB_CLIENT_ID || !GITHUB_CLIENT_SECRET) {
-      throw new Error("GitHub 客户端配置缺失");
+    if (!GITHUB_CLIENT_ID || !GITHUB_CLIENT_SECRET || !GITHUB_KV) {
+      throw new Error("GitHub 配置缺失");
     }
     
-    console.log("正在请求 GitHub 访问令牌...");
+    // 3. 获取访问令牌
+    if (isDebug) console.log("请求GitHub访问令牌...");
+    
     const tokenResponse = await fetch("https://github.com/login/oauth/access_token", {
       method: "POST",
       headers: {
@@ -522,111 +505,77 @@ async function handleGitHubOAuth(request, env) {
     });
     
     if (!tokenResponse.ok) {
-      const errorText = await tokenResponse.text();
-      throw new Error(`GitHub 令牌请求失败: ${tokenResponse.status} - ${errorText}`);
+      throw new Error(`GitHub令牌请求失败: ${tokenResponse.status}`);
     }
     
     const tokenData = await tokenResponse.json();
-    console.log("GitHub 令牌响应:", tokenData);
+    if (isDebug) console.log("令牌响应状态码:", tokenResponse.status);
     
     if (tokenData.error) {
-      throw new Error(`GitHub 错误: ${tokenData.error_description}`);
+      throw new Error(`GitHub错误: ${tokenData.error_description}`);
     }
     
     const { access_token, token_type } = tokenData;
-    console.log("已获取 GitHub 访问令牌");
     
-    // 测试令牌有效性
-    const testResponse = await fetch("https://api.github.com/user", {
-      headers: { 
-        "Authorization": `${token_type} ${access_token}`,
-        "User-Agent": "MyBlog/1.0 (https://my-blog.bxiao.workers.dev)"
-      }
-    });
+    // 4. 获取用户信息
+    const userHeaders = {
+      "Authorization": `${token_type} ${access_token}`,
+      "User-Agent": "MyBlog/1.0",
+      "Accept": "application/json"
+    };
     
-    console.log("GitHub API 测试响应:", {
-      status: testResponse.status,
-      headers: Object.fromEntries(testResponse.headers.entries())
-    });
-    
-    if (!testResponse.ok) {
-      const testBody = await testResponse.text();
-      throw new Error(`令牌测试失败: ${testResponse.status} - ${testBody}`);
-    }
-    
-    // 获取用户信息
-    const userResponse = await fetch("https://api.github.com/user", {
-      headers: { 
-        "Authorization": `${token_type} ${access_token}`,
-        "User-Agent": "MyBlog/1.0 (https://my-blog.bxiao.workers.dev)"
-      }
-    });
-    
-    // 记录完整响应信息（关键调试步骤）
-    const responseText = await userResponse.text();
-    console.log("GitHub 用户信息响应:", {
-      status: userResponse.status,
-      headers: Object.fromEntries(userResponse.headers.entries()),
-      body: responseText
-    });
+    const userResponse = await fetch("https://api.github.com/user", { headers: userHeaders });
     
     if (!userResponse.ok) {
-      // 解析 GitHub 错误响应
-      let errorData = {};
-      try {
-        errorData = JSON.parse(responseText);
-      } catch {
-        errorData.message = responseText;
-      }
-      
-      throw new Error(`GitHub 用户信息请求失败: ${userResponse.status} - ${errorData.message || "未知错误"}`);
+      throw new Error(`用户信息请求失败: ${userResponse.status}`);
     }
     
-    const userData = JSON.parse(responseText);
-    console.log("用户信息获取成功:", userData.login);
+    const userData = await userResponse.json();
+    if (isDebug) console.log("用户认证成功:", userData.login);
     
-    // 设置用户角色 (根据用户名或其他条件)
+    // 5. 设置用户角色
     let role = "user";
-    if (userData.login === "xiaobaiweinuli") {
+    const adminUsers = [env.ADMIN_USERNAME, "xiaobaiweinuli"].filter(Boolean);
+    const collaborators = env.COLLABORATORS_LIST ? 
+                        env.COLLABORATORS_LIST.split(',').map(s => s.trim()) : [];
+    
+    if (adminUsers.includes(userData.login)) {
       role = "admin";
-    } else if (userData.login === "collaborator-username") {
+    } else if (env.COLLABORATOR_USERNAME === userData.login || collaborators.includes(userData.login)) {
       role = "collaborator";
     }
     
-    // 将角色添加到用户数据中
-    userData.role = role;
-    
-    // 生成安全的会话令牌（包含用户ID和角色）
+    // 6. 生成会话令牌
     const sessionToken = await generateSessionToken(userData.id, role, env);
     
-    // 安全存储 GitHub 访问令牌 (使用 GITHUB_KV 存储)
-    await GITHUB_KV.put(
-      `github_token:${userData.id}`,
-      JSON.stringify({
-        token: access_token,
-        token_type,
-        expires_at: Date.now() + (tokenData.expires_in || 3600) * 1000,
-        scopes: tokenData.scope?.split(',') || []
-      }),
-      { expirationTtl: 3600 } // 1小时过期
-    );
+    // 7. 存储Token和用户信息
+    try {
+      const tasks = [
+        GITHUB_KV.put(`github_token:${userData.id}`, JSON.stringify({
+          token: access_token,
+          token_type,
+          expires_at: Date.now() + (tokenData.expires_in || 3600) * 1000,
+          scopes: tokenData.scope?.split(',') || []
+        }), { expirationTtl: 3600 }),
+        
+        GITHUB_KV.put(`github_user:${userData.id}`, JSON.stringify({
+          login: userData.login,
+          name: userData.name,
+          avatar_url: userData.avatar_url,
+          email: userData.email || null,
+          html_url: userData.html_url,
+          role
+        }), { expirationTtl: 86400 })
+      ];
+      
+      await Promise.all(tasks);
+    } catch (kvError) {
+      console.error("KV存储错误:", kvError);
+      // 继续执行流程
+    }
     
-    // 存储用户信息和角色
-    await GITHUB_KV.put(
-      `github_user:${userData.id}`,
-      JSON.stringify({
-        login: userData.login,
-        name: userData.name,
-        avatar_url: userData.avatar_url,
-        email: userData.email || null,
-        html_url: userData.html_url,
-        role: role
-      }),
-      { expirationTtl: 86400 } // 24小时过期
-    );
-    
-    // 准备用于前端的用户数据（包含会话令牌）
-    const frontendData = {
+    // 8. 返回用户数据
+    return new Response(JSON.stringify({
       success: true,
       access_token,
       token_type,
@@ -637,38 +586,30 @@ async function handleGitHubOAuth(request, env) {
         avatar_url: userData.avatar_url,
         email: userData.email || null,
         html_url: userData.html_url,
-        role: role
+        role
       },
       session_token: sessionToken
-    };
-    
-    // 返回JSON响应而非重定向，让前端可以直接处理
-    return new Response(JSON.stringify(frontendData), {
+    }), {
       status: 200,
       headers: {
         "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": new URL(redirectUri).origin,
-        "Access-Control-Allow-Credentials": "true",
-        ...handleCORS(request, env)
+        ...corsHeaders
       }
     });
   } catch (error) {
-    console.error("GitHub OAuth 错误:", {
-      message: error.message,
-      stack: error.stack,
-      env: Object.keys(env || {})
-    });
+    console.error("GitHub OAuth错误:", error.message);
     
-    const redirectUri = new URL(request.url).searchParams.get("redirect_uri") || env.FRONTEND_URL || "http://localhost:3000";
+    const redirectUri = new URL(request.url).searchParams.get("redirect_uri") || 
+                       env.FRONTEND_URL || "http://localhost:3000";
     
     return new Response(JSON.stringify({
       success: false,
       error: "认证失败，请重试",
-      message: error.message,
+      message: isDebug ? error.message : undefined,
       redirect: `${redirectUri}/login?error=auth_failed`
     }), {
       status: 500,
-      headers: { "Content-Type": "application/json", ...handleCORS(request, env) }
+      headers: { "Content-Type": "application/json", ...corsHeaders }
     });
   }
 }
@@ -676,13 +617,15 @@ __name(handleGitHubOAuth, "handleGitHubOAuth");
 
 // src/github-proxy.js - GitHub API 代理 (防止令牌泄露)
 async function handleGitHubAPI(request, env) {
+  const corsHeaders = handleCORS(request, env);
+  
   try {
-    // 验证会话令牌
+    // 1. 验证用户请求
     const authHeader = request.headers.get("Authorization");
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "未授权" }), {
         status: 401,
-        headers: { "Content-Type": "application/json", ...handleCORS(request, env) }
+        headers: { "Content-Type": "application/json", ...corsHeaders }
       });
     }
     
@@ -691,57 +634,84 @@ async function handleGitHubAPI(request, env) {
     if (!user) {
       return new Response(JSON.stringify({ error: "无效的会话" }), {
         status: 401,
-        headers: { "Content-Type": "application/json", ...handleCORS(request, env) }
+        headers: { "Content-Type": "application/json", ...corsHeaders }
       });
     }
     
-    // 从 KV 存储获取 GitHub 令牌
-    const tokenData = await env.GITHUB_KV.get(`github_token:${user.id}`, "json");
-    if (!tokenData || !tokenData.token) {
+    // 2. 检查环境和令牌
+    if (!env.GITHUB_KV) {
+      throw new Error("GITHUB_KV 未配置");
+    }
+    
+    const tokenData = await env.GITHUB_KV.get(`github_token:${user.id}`, "json").catch(() => null);
+    if (!tokenData?.token) {
       return new Response(JSON.stringify({ error: "需要重新认证" }), {
         status: 401,
-        headers: { "Content-Type": "application/json", ...handleCORS(request, env) }
+        headers: { "Content-Type": "application/json", ...corsHeaders }
       });
     }
     
-    // 检查令牌是否过期
     if (tokenData.expires_at && tokenData.expires_at < Date.now()) {
       return new Response(JSON.stringify({ error: "令牌已过期，请重新认证" }), {
         status: 401,
-        headers: { "Content-Type": "application/json", ...handleCORS(request, env) }
+        headers: { "Content-Type": "application/json", ...corsHeaders }
       });
     }
     
-    // 代理请求到 GitHub API
+    // 3. 构建并发送GitHub API请求
     const url = new URL(request.url);
-    const githubPath = url.pathname.replace("/api/github/proxy/", "");
-    const githubUrl = `https://api.github.com/${githubPath}${url.search}`;
+    const cleanPath = url.pathname.replace("/api/github/proxy/", "").replace(/^\//, "");
+    const githubUrl = `https://api.github.com/${cleanPath}${url.search}`;
     
-    console.log(`代理请求到 GitHub API: ${githubUrl}`);
+    // 设置安全的请求头
+    const requestHeaders = new Headers();
+    requestHeaders.set("Authorization", `${tokenData.token_type || "Bearer"} ${tokenData.token}`);
+    requestHeaders.set("Accept", "application/json");
+    requestHeaders.set("User-Agent", "MyBlog/1.0");
     
+    // 复制安全的头部
+    const safeHeaders = ['content-type', 'if-none-match', 'if-modified-since', 'cache-control'];
+    for (const [key, value] of request.headers.entries()) {
+      if (safeHeaders.includes(key.toLowerCase())) {
+        requestHeaders.set(key, value);
+      }
+    }
+    
+    // 发送请求
     const response = await fetch(githubUrl, {
       method: request.method,
-      headers: {
-        "Authorization": `${tokenData.token_type || "Bearer"} ${tokenData.token}`,
-        "Accept": "application/json",
-        "User-Agent": "MyBlog/1.0 (https://my-blog.bxiao.workers.dev)",
-        ...request.headers
-      },
-      body: request.body
+      headers: requestHeaders,
+      body: ['GET', 'HEAD'].includes(request.method) ? null : request.body
     });
     
-    const contentType = response.headers.get("Content-Type") || "application/json";
-    const headers = { ...handleCORS(request, env), "Content-Type": contentType };
+    // 4. 构建响应
+    const headers = new Headers(corsHeaders);
+    headers.set("Content-Type", response.headers.get("Content-Type") || "application/json");
+    
+    // 只复制安全的响应头
+    const safeResponseHeaders = [
+      'etag', 'cache-control', 'content-type', 'last-modified', 
+      'x-ratelimit-limit', 'x-ratelimit-remaining', 'x-ratelimit-reset',
+      'x-github-request-id', 'x-github-api-version'
+    ];
+    
+    for (const [key, value] of response.headers.entries()) {
+      if (safeResponseHeaders.includes(key.toLowerCase())) {
+        headers.set(key, value);
+      }
+    }
     
     return new Response(response.body, {
       status: response.status,
+      statusText: response.statusText,
       headers
     });
+    
   } catch (error) {
     console.error("GitHub API 代理错误:", error);
-    return new Response(JSON.stringify({ error: "服务器错误" }), {
+    return new Response(JSON.stringify({ error: "服务器错误", message: env?.DEBUG === "true" ? error.message : undefined }), {
       status: 500,
-      headers: { "Content-Type": "application/json", ...handleCORS(request, env) }
+      headers: { "Content-Type": "application/json", ...corsHeaders }
     });
   }
 }
@@ -761,8 +731,32 @@ __name(handleGitHubAPI, "handleGitHubAPI");
  * @property {string} FRONTEND_URL - 前端应用URL
  */
 
+// 路由映射表
+const routes = {
+  "/api/r2/upload": { handler: handleR2Upload, methods: ["POST"] },
+  "/api/r2/list": { handler: handleR2List, methods: ["GET"] },
+  "/api/r2/delete": { handler: handleR2Delete, methods: ["DELETE"] },
+  "/api/r2/check": { handler: handleR2Check, methods: ["GET"] },
+  "/api/r2/view": { handler: handleR2View, methods: ["GET"] },
+  "/api/health": { handler: handleHealth, methods: ["GET"] },
+  "/health": { handler: handleHealth, methods: ["GET"] }
+};
+
+// 健康检查端点
+async function handleHealth(request, env) {
+  return new Response(JSON.stringify({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    version: "1.1.0"
+  }), {
+    status: 200,
+    headers: { "Content-Type": "application/json", ...handleCORS(request, env) }
+  });
+}
+
 async function handleRequest(request, env) {
   try {
+    // 处理预检请求
     if (request.method === "OPTIONS") {
       return new Response(null, { headers: handleCORS(request, env) });
     }
@@ -770,26 +764,31 @@ async function handleRequest(request, env) {
     const url = new URL(request.url);
     const path = url.pathname;
     
-    if (path === "/api/r2/upload" && request.method === "POST") {
-      return handleR2Upload(request, env);
-    } else if (path === "/api/r2/list" && request.method === "GET") {
-      return handleR2List(request, env);
-    } else if (path === "/api/r2/delete" && request.method === "DELETE") {
-      return handleR2Delete(request, env);
-    } else if (path === "/api/r2/check" && request.method === "GET") {
-      return handleR2Check(request, env);
-    } else if (path === "/api/r2/view" && request.method === "GET") {
-      return handleR2View(request, env);
-    } else if (path.startsWith("/api/github/oauth")) {
-      return handleGitHubOAuth(request, env);
-    } else if (path.startsWith("/api/github/proxy/")) {
-      return handleGitHubAPI(request, env);
-    } else {
-      return new Response("未找到路由", {
-        status: 404,
-        headers: { "Content-Type": "application/json", ...handleCORS(request, env) }
-      });
+    // 1. 检查精确匹配路由
+    const route = routes[path];
+    if (route && route.methods.includes(request.method)) {
+      return route.handler(request, env);
     }
+    
+    // 2. 检查前缀匹配路由
+    if (path.startsWith("/api/github/oauth")) {
+      return handleGitHubOAuth(request, env);
+    }
+    
+    if (path.startsWith("/api/github/proxy/")) {
+      return handleGitHubAPI(request, env);
+    }
+    
+    // 3. 没有匹配的路由
+    return new Response(JSON.stringify({
+      error: "Not Found",
+      message: "请求的端点不存在",
+      path: path
+    }), {
+      status: 404,
+      headers: { "Content-Type": "application/json", ...handleCORS(request, env) }
+    });
+    
   } catch (error) {
     console.error("请求处理错误:", error);
     return handleError(error, request, env);
@@ -813,25 +812,63 @@ async function verifyUserRole(sessionToken, env) {
   }
 }
 
-// 添加单一的默认导出
+// 导出Worker
 export default {
   async fetch(request, env, ctx) {
+    const isDebug = env?.DEBUG === "true";
+    const isPerf = env?.PERF_MONITORING === "true";
+    
     try {
-      console.log('=== Worker 初始化 ===');
-      console.log('环境变量检查:', env ? Object.keys(env) : "无环境变量");
+      if (isDebug) {
+        console.log('=== Worker 初始化 ===');
+        console.log('环境变量:', Object.keys(env || {}));
+      }
       
       if (!env) {
-        return new Response(JSON.stringify({ error: "环境配置缺失" }), {
+        return new Response(JSON.stringify({ 
+          error: "环境配置缺失",
+          message: "Worker环境变量未正确配置" 
+        }), {
           status: 500,
           headers: { "Content-Type": "application/json" }
         });
       }
       
-      return handleRequest(request, env);
+      // 性能监控
+      const startTime = isPerf || isDebug ? Date.now() : 0;
+      let response;
+      
+      try {
+        // 设置请求超时处理
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒超时
+        
+        const fetchPromise = handleRequest(request, env);
+        response = await Promise.race([
+          fetchPromise,
+          new Promise((_, reject) => {
+            controller.signal.addEventListener('abort', 
+              () => reject(new Error('请求超时')));
+          })
+        ]);
+        
+        clearTimeout(timeoutId);
+      } finally {
+        if (isPerf || isDebug) {
+          const duration = Date.now() - startTime;
+          console.log(`请求处理: ${duration}ms, 路径: ${new URL(request.url).pathname}`);
+        }
+      }
+      
+      return response;
     } catch (error) {
-      console.error("Worker 初始化错误:", error);
-      return new Response(JSON.stringify({ error: "内部错误" }), {
-        status: 500,
+      console.error("Worker错误:", error);
+      return new Response(JSON.stringify({ 
+        error: "内部错误", 
+        message: error.message,
+        stack: isDebug ? error.stack : undefined
+      }), {
+        status: error.message === '请求超时' ? 408 : 500,
         headers: { "Content-Type": "application/json" }
       });
     }

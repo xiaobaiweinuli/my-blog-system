@@ -15,6 +15,7 @@ import { postInputSchema, PostInput } from '@/lib/validators/admin';
 import { z } from 'zod';
 import yaml from 'js-yaml';
 import { Octokit } from '@octokit/rest';
+import { getToken } from 'next-auth/jwt';
 
 // Type definitions for the API response
 type PostListItem = {
@@ -66,13 +67,13 @@ async function GET(req: NextRequest) {
   } = postListQuerySchema.parse(query);
 
   // Authenticate and authorize
-  const session = await getServerSession(authOptions);
-  if (!session) {
+  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+  if (!token) {
     throw createError('AUTHENTICATION_REQUIRED', 'Authentication required');
   }
-  validateUserSession(session);
-  // 用 session 里的 token 创建 octokit
-  const octokit = new Octokit({ auth: session.github_access_token });
+  validateUserSession(token);
+  // 用 token 里的 github_access_token 创建 octokit
+  const octokit = new Octokit({ auth: token.github_access_token });
   const { owner, repo } = validateGitHubConfig();
 
   try {
@@ -85,7 +86,15 @@ async function GET(req: NextRequest) {
     });
 
     if (!Array.isArray(files)) {
-      throw createError('NOT_FOUND', 'Posts directory not found or is not a directory');
+      return {
+        data: [],
+        meta: {
+          total: 0,
+          page,
+          limit,
+          totalPages: 0,
+        },
+      };
     }
 
     // Filter for markdown files and fetch their content
@@ -177,9 +186,21 @@ async function GET(req: NextRequest) {
     };
 
     return response;
-  } catch (error) {
+  } catch (error: any) {
+    // 如果是 404，说明 posts 目录不存在，返回空列表
+    if (error.status === 404) {
+      return {
+        data: [],
+        meta: {
+          total: 0,
+          page,
+          limit,
+          totalPages: 0,
+        },
+      };
+    }
     handleGitHubError(error, 'fetch posts');
-    throw error; // Re-throw after handling
+    throw error; // 其它错误照常抛出
   }
 }
 
@@ -189,13 +210,13 @@ async function GET(req: NextRequest) {
  */
 async function POST(req: NextRequest) {
   // Authenticate and authorize
-  const session = await getServerSession(authOptions);
-  if (!session) {
+  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+  if (!token) {
     throw createError('AUTHENTICATION_REQUIRED', 'Authentication required');
   }
-  validateUserSession(session);
-  // 用 session 里的 token 创建 octokit
-  const octokit = new Octokit({ auth: session.github_access_token });
+  validateUserSession(token);
+  // 用 token 里的 github_access_token 创建 octokit
+  const octokit = new Octokit({ auth: token.github_access_token });
   const { owner, repo } = validateGitHubConfig();
 
   try {
